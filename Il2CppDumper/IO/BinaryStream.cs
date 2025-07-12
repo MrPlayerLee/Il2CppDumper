@@ -184,27 +184,23 @@ namespace Il2CppDumper
 
         public T[] ReadClassArray<T>(long count) where T : new()
         {
-            try
+            if (count > int.MaxValue)
             {
-                var t = new T[count];
-                for (var i = 0; i < count; i++)
+                var list = new List<T>();
+                for (long i = 0; i < count; i++)
+                {
+                    list.Add(ReadClass<T>());
+                }
+                return list.ToArray();
+            }
+            else
+            {
+                var t = new T[(int)count];
+                for (int i = 0; i < count; i++)
                 {
                     t[i] = ReadClass<T>();
                 }
                 return t;
-            }
-            catch (OverflowException)
-            {
-                unchecked
-                {
-                    var safeCount = (int)count;
-                    var t = new T[safeCount];
-                    for (var i = 0; i < safeCount; i++)
-                    {
-                        t[i] = ReadClass<T>();
-                    }
-                    return t;
-                }
             }
         }
 
