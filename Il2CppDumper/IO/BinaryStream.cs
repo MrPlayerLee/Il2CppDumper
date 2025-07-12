@@ -184,12 +184,28 @@ namespace Il2CppDumper
 
         public T[] ReadClassArray<T>(long count) where T : new()
         {
-            var t = new T[count];
-            for (var i = 0; i < count; i++)
+            try
             {
-                t[i] = ReadClass<T>();
+                var t = new T[count];
+                for (var i = 0; i < count; i++)
+                {
+                    t[i] = ReadClass<T>();
+                }
+                return t;
             }
-            return t;
+            catch (OverflowException)
+            {
+                unchecked
+                {
+                    var safeCount = (int)count;
+                    var t = new T[safeCount];
+                    for (var i = 0; i < safeCount; i++)
+                    {
+                        t[i] = ReadClass<T>();
+                    }
+                    return t;
+                }
+            }
         }
 
         public T[] ReadClassArray<T>(ulong addr, ulong count) where T : new()
