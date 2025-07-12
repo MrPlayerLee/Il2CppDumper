@@ -93,22 +93,57 @@ namespace Il2CppDumper
             {
                 Version = 24.1;
             }
-            typeDefs = ReadMetadataClassArray<Il2CppTypeDefinition>(header.typeDefinitionsOffset, header.typeDefinitionsSize);
-            methodDefs = ReadMetadataClassArray<Il2CppMethodDefinition>(header.methodsOffset, header.methodsSize);
-            parameterDefs = ReadMetadataClassArray<Il2CppParameterDefinition>(header.parametersOffset, header.parametersSize);
-            fieldDefs = ReadMetadataClassArray<Il2CppFieldDefinition>(header.fieldsOffset, header.fieldsSize);
+
+            var typeDefSize = SizeOf(typeof(Il2CppTypeDefinition));
+            var totalTypeDefCount = header.typeDefinitionsSize / typeDefSize;
+            var validTypeDefCount = imageDefs.Select(x => x.typeStart + (int)x.typeCount).DefaultIfEmpty().Max();
+            validTypeDefCount = Math.Min(validTypeDefCount, totalTypeDefCount);
+            typeDefs = ReadClassArray<Il2CppTypeDefinition>(header.typeDefinitionsOffset, validTypeDefCount);
+
+            var methodDefSize = SizeOf(typeof(Il2CppMethodDefinition));
+            var totalMethodDefCount = header.methodsSize / methodDefSize;
+            var validMethodDefCount = typeDefs.Select(x => x.methodStart + x.method_count).DefaultIfEmpty().Max();
+            validMethodDefCount = Math.Min(validMethodDefCount, totalMethodDefCount);
+            methodDefs = ReadClassArray<Il2CppMethodDefinition>(header.methodsOffset, validMethodDefCount);
+
+            var parameterDefSize = SizeOf(typeof(Il2CppParameterDefinition));
+            var totalParameterDefCount = header.parametersSize / parameterDefSize;
+            var validParameterDefCount = methodDefs.Select(x => x.parameterStart + x.parameterCount).DefaultIfEmpty().Max();
+            validParameterDefCount = Math.Min(validParameterDefCount, totalParameterDefCount);
+            parameterDefs = ReadClassArray<Il2CppParameterDefinition>(header.parametersOffset, validParameterDefCount);
+
+            var fieldDefSize = SizeOf(typeof(Il2CppFieldDefinition));
+            var totalFieldDefCount = header.fieldsSize / fieldDefSize;
+            var validFieldDefCount = typeDefs.Select(x => x.fieldStart + x.field_count).DefaultIfEmpty().Max();
+            validFieldDefCount = Math.Min(validFieldDefCount, totalFieldDefCount);
+            fieldDefs = ReadClassArray<Il2CppFieldDefinition>(header.fieldsOffset, validFieldDefCount);
             var fieldDefaultValues = ReadMetadataClassArray<Il2CppFieldDefaultValue>(header.fieldDefaultValuesOffset, header.fieldDefaultValuesSize);
             var parameterDefaultValues = ReadMetadataClassArray<Il2CppParameterDefaultValue>(header.parameterDefaultValuesOffset, header.parameterDefaultValuesSize);
             fieldDefaultValuesDic = fieldDefaultValues.ToDictionary(x => x.fieldIndex);
             parameterDefaultValuesDic = parameterDefaultValues.ToDictionary(x => x.parameterIndex);
-            propertyDefs = ReadMetadataClassArray<Il2CppPropertyDefinition>(header.propertiesOffset, header.propertiesSize);
-            interfaceIndices = ReadClassArray<int>(header.interfacesOffset, header.interfacesSize / 4);
-            nestedTypeIndices = ReadClassArray<int>(header.nestedTypesOffset, header.nestedTypesSize / 4);
-            eventDefs = ReadMetadataClassArray<Il2CppEventDefinition>(header.eventsOffset, header.eventsSize);
+            var propertyDefSize = SizeOf(typeof(Il2CppPropertyDefinition));
+            var totalPropertyDefCount = header.propertiesSize / propertyDefSize;
+            var validPropertyDefCount = typeDefs.Select(x => x.propertyStart + x.property_count).DefaultIfEmpty().Max();
+            validPropertyDefCount = Math.Min(validPropertyDefCount, totalPropertyDefCount);
+            propertyDefs = ReadClassArray<Il2CppPropertyDefinition>(header.propertiesOffset, validPropertyDefCount);
+
+            var eventDefSize = SizeOf(typeof(Il2CppEventDefinition));
+            var totalEventDefCount = header.eventsSize / eventDefSize;
+            var validEventDefCount = typeDefs.Select(x => x.eventStart + x.event_count).DefaultIfEmpty().Max();
+            validEventDefCount = Math.Min(validEventDefCount, totalEventDefCount);
+            eventDefs = ReadClassArray<Il2CppEventDefinition>(header.eventsOffset, validEventDefCount);
+
+            var nestedCount = typeDefs.Select(x => x.nestedTypesStart + x.nested_type_count).DefaultIfEmpty().Max();
+            nestedTypeIndices = ReadClassArray<int>(header.nestedTypesOffset, nestedCount);
+
+            var interfaceCount = typeDefs.Select(x => x.interfacesStart + x.interfaces_count).DefaultIfEmpty().Max();
+            interfaceIndices = ReadClassArray<int>(header.interfacesOffset, interfaceCount);
             genericContainers = ReadMetadataClassArray<Il2CppGenericContainer>(header.genericContainersOffset, header.genericContainersSize);
             genericParameters = ReadMetadataClassArray<Il2CppGenericParameter>(header.genericParametersOffset, header.genericParametersSize);
             constraintIndices = ReadClassArray<int>(header.genericParameterConstraintsOffset, header.genericParameterConstraintsSize / 4);
-            vtableMethods = ReadClassArray<uint>(header.vtableMethodsOffset, header.vtableMethodsSize / 4);
+
+            var vtableCount = typeDefs.Select(x => x.vtableStart + x.vtable_count).DefaultIfEmpty().Max();
+            vtableMethods = ReadClassArray<uint>(header.vtableMethodsOffset, vtableCount);
             stringLiterals = ReadMetadataClassArray<Il2CppStringLiteral>(header.stringLiteralOffset, header.stringLiteralSize);
             if (Version > 16)
             {
