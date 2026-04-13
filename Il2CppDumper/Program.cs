@@ -17,6 +17,7 @@ namespace Il2CppDumper
             string il2cppPath = null;
             string metadataPath = null;
             string outputDir = null;
+            bool manualMode = false; // 수동 모드 플래그 추가
 
             if (args.Length == 1)
             {
@@ -26,33 +27,34 @@ namespace Il2CppDumper
                     return;
                 }
             }
-            if (args.Length > 3)
+
+            // 인자 처리 로직 수정
+            foreach (var arg in args)
             {
-                ShowHelp();
-                return;
-            }
-            if (args.Length > 1)
-            {
-                foreach (var arg in args)
+                if (arg == "-m" || arg == "--manual")
                 {
-                    if (File.Exists(arg))
+                    manualMode = true;
+                    continue;
+                }
+
+                if (File.Exists(arg))
+                {
+                    var file = File.ReadAllBytes(arg);
+                    if (file.Length >= 4 && BitConverter.ToUInt32(file, 0) == 0xFAB11BAF)
                     {
-                        var file = File.ReadAllBytes(arg);
-                        if (BitConverter.ToUInt32(file, 0) == 0xFAB11BAF)
-                        {
-                            metadataPath = arg;
-                        }
-                        else
-                        {
-                            il2cppPath = arg;
-                        }
+                        metadataPath = arg;
                     }
-                    else if (Directory.Exists(arg))
+                    else
                     {
-                        outputDir = Path.GetFullPath(arg) + Path.DirectorySeparatorChar;
+                        il2cppPath = arg;
                     }
                 }
+                else if (Directory.Exists(arg))
+                {
+                    outputDir = Path.GetFullPath(arg) + Path.DirectorySeparatorChar;
+                }
             }
+
             outputDir ??= AppDomain.CurrentDomain.BaseDirectory;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -94,7 +96,8 @@ namespace Il2CppDumper
             {
                 try
                 {
-                    if (Init(il2cppPath, metadataPath, out var metadata, out var il2Cpp))
+                    // Init 메서드 호출 시 manualMode 전달
+                    if (Init(il2cppPath, metadataPath, manualMode, out var metadata, out var il2Cpp))
                     {
                         Dump(metadata, il2Cpp, outputDir);
                     }
@@ -113,10 +116,10 @@ namespace Il2CppDumper
 
         static void ShowHelp()
         {
-            Console.WriteLine($"usage: {AppDomain.CurrentDomain.FriendlyName} <executable-file> <global-metadata> <output-directory>");
+            Console.WriteLine($"usage: {AppDomain.CurrentDomain.FriendlyName} <executable-file> <global-metadata> <output-directory> [-m|--manual]");
         }
 
-        private static bool Init(string il2cppPath, string metadataPath, out Metadata metadata, out Il2Cpp il2Cpp)
+        private static bool Init(string il2cppPath, string metadataPath, bool manualMode, out Metadata metadata, out Il2Cpp il2Cpp)
         {
             Console.WriteLine("Initializing metadata...");
             var metadataBytes = File.ReadAllBytes(metadataPath);
@@ -204,50 +207,62 @@ namespace Il2CppDumper
                 }
             }
 
-            Console.WriteLine("Searching...");
-            try
+            // 검색 로직 부분 수정
+            bool flag = false;
+            if (!manualMode)
             {
-                var flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                Console.WriteLine("Searching...");
+                try
                 {
-                    if (!flag && il2Cpp is PE)
+                    flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        Console.WriteLine("Use custom PE loader");
-                        il2Cpp = PELoader.Load(il2cppPath);
-                        il2Cpp.SetProperties(version, metadata.metadataUsagesCount);
-                        flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
+                        if (!flag && il2Cpp is PE)
+                        {
+                            Console.WriteLine("Use custom PE loader");
+                            il2Cpp = PELoader.Load(il2cppPath);
+                            il2Cpp.SetProperties(version, metadata.metadataUsagesCount);
+                            flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
+                        }
+                    }
+                    if (!flag)
+                    {
+                        flag = il2Cpp.Search();
+                    }
+                    if (!flag)
+                    {
+                        flag = il2Cpp.SymbolSearch();
                     }
                 }
-                if (!flag)
+                catch (Exception e)
                 {
-                    flag = il2Cpp.Search();
-                }
-                if (!flag)
-                {
-                    flag = il2Cpp.SymbolSearch();
-                }
-                if (!flag)
-                {
-                    Console.WriteLine("ERROR: Can't use auto mode to process file, try manual mode.");
-                    Console.Write("Input CodeRegistration: ");
-                    var codeRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
-                    Console.Write("Input MetadataRegistration: ");
-                    var metadataRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
-                    il2Cpp.Init(codeRegistration, metadataRegistration);
-                }
-                if (il2Cpp.Version >= 27 && il2Cpp.IsDumped)
-                {
-                    var typeDef = metadata.typeDefs[0];
-                    var il2CppType = il2Cpp.types[typeDef.byvalTypeIndex];
-                    metadata.ImageBase = il2CppType.data.typeHandle - metadata.header.typeDefinitionsOffset;
+                    Console.WriteLine(e);
+                    Console.WriteLine("ERROR: An error occurred while processing.");
+                    return false;
                 }
             }
-            catch (Exception e)
+
+            if (!flag) // manualMode가 true이거나 자동 검색이 실패한 경우 진입
             {
-                Console.WriteLine(e);
-                Console.WriteLine("ERROR: An error occurred while processing.");
-                return false;
+                if (manualMode)
+                    Console.WriteLine("Manual mode enabled.");
+                else
+                    Console.WriteLine("ERROR: Can't use auto mode to process file, try manual mode.");
+
+                Console.Write("Input CodeRegistration: ");
+                var codeRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
+                Console.Write("Input MetadataRegistration: ");
+                var metadataRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
+                il2Cpp.Init(codeRegistration, metadataRegistration);
             }
+
+            if (il2Cpp.Version >= 27 && il2Cpp.IsDumped)
+            {
+                var typeDef = metadata.typeDefs[0];
+                var il2CppType = il2Cpp.types[typeDef.byvalTypeIndex];
+                metadata.ImageBase = il2CppType.data.typeHandle - metadata.header.typeDefinitionsOffset;
+            }
+
             return true;
         }
 
