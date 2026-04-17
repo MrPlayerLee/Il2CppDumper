@@ -44,11 +44,14 @@ namespace Il2CppDumper
                 foreach (var imageDef in metadata.imageDefs)
                 {
                     var imageDefName = metadata.GetStringFromIndex(imageDef.nameIndex);
-                    var codeGenModule = il2Cpp.codeGenModules[imageDefName];
-                    if (imageDef.customAttributeCount > 0)
+                    // [!] 안전망 추가: codeGenModules에 모듈 이름이 없어도 크래시 방지
+                    if (il2Cpp.codeGenModules != null && il2Cpp.codeGenModules.TryGetValue(imageDefName, out var codeGenModule))
                     {
-                        var pointers = il2Cpp.ReadClassArray<ulong>(il2Cpp.MapVATR(codeGenModule.customAttributeCacheGenerator), imageDef.customAttributeCount);
-                        pointers.CopyTo(customAttributeGenerators, imageDef.customAttributeStart);
+                        if (imageDef.customAttributeCount > 0)
+                        {
+                            var pointers = il2Cpp.ReadClassArray<ulong>(il2Cpp.MapVATR(codeGenModule.customAttributeCacheGenerator), imageDef.customAttributeCount);
+                            pointers.CopyTo(customAttributeGenerators, imageDef.customAttributeStart);
+                        }
                     }
                 }
             }
@@ -241,7 +244,11 @@ namespace Il2CppDumper
             Il2CppRGCTXDefinition[] collection = null;
             if (il2Cpp.Version >= 24.2)
             {
-                il2Cpp.rgctxsDictionary[imageName].TryGetValue(typeDef.token, out collection);
+                // [!] 안전망 추가: KeyNotFoundException 방지 (TryGetValue 이중 체크)
+                if (il2Cpp.rgctxsDictionary != null && il2Cpp.rgctxsDictionary.TryGetValue(imageName, out var dictionary))
+                {
+                    dictionary.TryGetValue(typeDef.token, out collection);
+                }
             }
             else
             {
@@ -259,7 +266,11 @@ namespace Il2CppDumper
             Il2CppRGCTXDefinition[] collection = null;
             if (il2Cpp.Version >= 24.2)
             {
-                il2Cpp.rgctxsDictionary[imageName].TryGetValue(methodDef.token, out collection);
+                // [!] 안전망 추가: KeyNotFoundException 방지 (TryGetValue 이중 체크)
+                if (il2Cpp.rgctxsDictionary != null && il2Cpp.rgctxsDictionary.TryGetValue(imageName, out var dictionary))
+                {
+                    dictionary.TryGetValue(methodDef.token, out collection);
+                }
             }
             else
             {

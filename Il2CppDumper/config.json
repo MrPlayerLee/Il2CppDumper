@@ -13,5 +13,9 @@
   "ForceIl2CppVersion": false,
   "ForceVersion": 16,
   "ForceDump": false,
-  "NoRedirectedPointer": false
+  "NoRedirectedPointer": false,
+  "CustomMetadataCount": 1,
+  "CustomMetadataTable": "",
+  "CustomCodeCount": 108,
+  "CustomCodeTable": ""
 }

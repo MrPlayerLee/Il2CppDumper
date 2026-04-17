@@ -52,7 +52,7 @@ namespace Il2CppDumper
         {
             if (codeRegistration != 0)
             {
-                var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u; //TODO
+                var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u;
                 if (Version >= 24.2)
                 {
                     pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
@@ -98,7 +98,7 @@ namespace Il2CppDumper
                     }
                     if (Version == 24.2)
                     {
-                        if (pCodeRegistration.interopDataCount == 0) //TODO
+                        if (pCodeRegistration.interopDataCount == 0)
                         {
                             Version = 24.3;
                             codeRegistration -= PointerSize * 2;
@@ -120,7 +120,7 @@ namespace Il2CppDumper
         public virtual void Init(ulong codeRegistration, ulong metadataRegistration)
         {
             pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
-            var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u; //TODO
+            var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u;
             if (Version == 27 && pCodeRegistration.invokerPointersCount > limit)
             {
                 Version = 27.1;
@@ -151,13 +151,54 @@ namespace Il2CppDumper
                 Console.WriteLine($"Change il2cpp version to: {Version}");
                 pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
             }
-            if (Version == 24.2 && pCodeRegistration.codeGenModules == 0) //TODO
+            if (Version == 24.2 && pCodeRegistration.codeGenModules == 0)
             {
                 Version = 24.3;
                 Console.WriteLine($"Change il2cpp version to: {Version}");
                 pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
             }
+
             pMetadataRegistration = MapVATR<Il2CppMetadataRegistration>(metadataRegistration);
+
+            // [!] 안티 덤프 우회: 잘못된 주소 참조로 인한 Overflow 방지 (SafeCount 적용)
+            pCodeRegistration.genericMethodPointersCount = SafeCount(pCodeRegistration.genericMethodPointersCount);
+            pCodeRegistration.invokerPointersCount = SafeCount(pCodeRegistration.invokerPointersCount);
+            if (Version < 27) pCodeRegistration.customAttributeCount = SafeCount(pCodeRegistration.customAttributeCount);
+            if (Version >= 22)
+            {
+                pCodeRegistration.reversePInvokeWrapperCount = SafeCount(pCodeRegistration.reversePInvokeWrapperCount);
+                pCodeRegistration.unresolvedVirtualCallCount = SafeCount(pCodeRegistration.unresolvedVirtualCallCount);
+            }
+            pMetadataRegistration.genericInstsCount = SafeCount(pMetadataRegistration.genericInstsCount);
+            pMetadataRegistration.fieldOffsetsCount = SafeCount(pMetadataRegistration.fieldOffsetsCount);
+            pMetadataRegistration.typesCount = SafeCount(pMetadataRegistration.typesCount);
+            pMetadataRegistration.methodSpecsCount = SafeCount(pMetadataRegistration.methodSpecsCount);
+            pMetadataRegistration.genericMethodTableCount = SafeCount(pMetadataRegistration.genericMethodTableCount);
+            if (Version >= 24.2) pCodeRegistration.codeGenModulesCount = SafeCount(pCodeRegistration.codeGenModulesCount);
+
+            // [!] Config 오버라이드 로직 적용
+            if (Program.config.CustomMetadataCount > 0)
+            {
+                pMetadataRegistration.genericMethodTableCount = Program.config.CustomMetadataCount;
+                Console.WriteLine($"[!] Metadata Count Overridden: {pMetadataRegistration.genericMethodTableCount}");
+            }
+            if (!string.IsNullOrEmpty(Program.config.CustomMetadataTable))
+            {
+                pMetadataRegistration.genericMethodTable = Convert.ToUInt64(Program.config.CustomMetadataTable, 16);
+                Console.WriteLine($"[!] Metadata Table Overridden: 0x{pMetadataRegistration.genericMethodTable:X}");
+            }
+
+            if (Program.config.CustomCodeCount > 0)
+            {
+                pCodeRegistration.codeGenModulesCount = (ulong)Program.config.CustomCodeCount;
+                Console.WriteLine($"[!] Code Count Overridden: {pCodeRegistration.codeGenModulesCount}");
+            }
+            if (!string.IsNullOrEmpty(Program.config.CustomCodeTable))
+            {
+                pCodeRegistration.codeGenModules = Convert.ToUInt64(Program.config.CustomCodeTable, 16);
+                Console.WriteLine($"[!] Code Table Overridden: 0x{pCodeRegistration.codeGenModules:X}");
+            }
+
             genericMethodPointers = MapVATR<ulong>(pCodeRegistration.genericMethodPointers, pCodeRegistration.genericMethodPointersCount);
             invokerPointers = MapVATR<ulong>(pCodeRegistration.invokerPointers, pCodeRegistration.invokerPointersCount);
             if (Version < 27)
@@ -325,14 +366,21 @@ namespace Il2CppDumper
             if (Version >= 24.2)
             {
                 var methodToken = methodDef.token;
-                var ptrs = codeGenModuleMethodPointers[imageName];
-                var methodPointerIndex = methodToken & 0x00FFFFFFu;
-                return ptrs[methodPointerIndex - 1];
+                // [!] KeyNotFoundException 방지를 위해 TryGetValue 사용 및 null 체크 추가
+                if (codeGenModuleMethodPointers != null && codeGenModuleMethodPointers.TryGetValue(imageName, out var ptrs))
+                {
+                    var methodPointerIndex = methodToken & 0x00FFFFFFu;
+                    if (ptrs != null && methodPointerIndex > 0 && methodPointerIndex <= (ulong)ptrs.Length)
+                    {
+                        return ptrs[methodPointerIndex - 1];
+                    }
+                }
+                return 0; // 주소를 찾지 못하면 0을 반환하여 강제 종료 방지
             }
             else
             {
                 var methodIndex = methodDef.methodIndex;
-                if (methodIndex >= 0)
+                if (methodPointers != null && methodIndex >= 0 && methodIndex < methodPointers.Length)
                 {
                     return methodPointers[methodIndex];
                 }
@@ -343,6 +391,17 @@ namespace Il2CppDumper
         public virtual ulong GetRVA(ulong pointer)
         {
             return pointer;
+        }
+
+        // [!] 쓰레기 값 필터링을 위한 안전 도우미 함수 (1600만 이상은 쓰레기 데이터로 간주)
+        private ulong SafeCount(ulong count)
+        {
+            return count > 0x1000000 ? 0 : count;
+        }
+
+        private long SafeCount(long count)
+        {
+            return count < 0 || count > 0x1000000 ? 0 : count;
         }
     }
 }

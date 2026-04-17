@@ -17,5 +17,12 @@
         public double ForceVersion { get; set; } = 24.3;
         public bool ForceDump { get; set; } = false;
         public bool NoRedirectedPointer { get; set; } = false;
+
+        // [!] 마비노기 모바일 안티 덤프 우회를 위한 커스텀 설정 속성 추가
+        public long CustomMetadataCount { get; set; } = 0;
+        public string CustomMetadataTable { get; set; } = "";
+
+        public long CustomCodeCount { get; set; } = 0;
+        public string CustomCodeTable { get; set; } = "";
     }
 }

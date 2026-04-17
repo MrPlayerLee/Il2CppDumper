@@ -8,7 +8,7 @@ namespace Il2CppDumper
 {
     class Program
     {
-        private static Config config;
+        public static Config config;
 
         [STAThread]
         static void Main(string[] args)
@@ -17,7 +17,7 @@ namespace Il2CppDumper
             string il2cppPath = null;
             string metadataPath = null;
             string outputDir = null;
-            bool manualMode = false; // 수동 모드 플래그 추가
+            bool manualMode = false;
 
             if (args.Length == 1)
             {
@@ -28,7 +28,6 @@ namespace Il2CppDumper
                 }
             }
 
-            // 인자 처리 로직 수정
             foreach (var arg in args)
             {
                 if (arg == "-m" || arg == "--manual")
@@ -96,7 +95,6 @@ namespace Il2CppDumper
             {
                 try
                 {
-                    // Init 메서드 호출 시 manualMode 전달
                     if (Init(il2cppPath, metadataPath, manualMode, out var metadata, out var il2Cpp))
                     {
                         Dump(metadata, il2Cpp, outputDir);
@@ -142,11 +140,11 @@ namespace Il2CppDumper
                     var nso = new NSO(il2CppMemory);
                     il2Cpp = nso.UnCompress();
                     break;
-                case 0x905A4D: //PE
+                case 0x905A4D:
                     il2Cpp = new PE(il2CppMemory);
                     break;
-                case 0x464c457f: //ELF
-                    if (il2cppBytes[4] == 2) //ELF64
+                case 0x464c457f:
+                    if (il2cppBytes[4] == 2)
                     {
                         il2Cpp = new Elf64(il2CppMemory);
                     }
@@ -155,7 +153,7 @@ namespace Il2CppDumper
                         il2Cpp = new Elf(il2CppMemory);
                     }
                     break;
-                case 0xCAFEBABE: //FAT Mach-O
+                case 0xCAFEBABE:
                 case 0xBEBAFECA:
                     var machofat = new MachoFat(new MemoryStream(il2cppBytes));
                     Console.Write("Select Platform: ");
@@ -174,10 +172,10 @@ namespace Il2CppDumper
                         goto case 0xFEEDFACF;
                     else
                         goto case 0xFEEDFACE;
-                case 0xFEEDFACF: // 64bit Mach-O
+                case 0xFEEDFACF:
                     il2Cpp = new Macho64(il2CppMemory);
                     break;
-                case 0xFEEDFACE: // 32bit Mach-O
+                case 0xFEEDFACE:
                     il2Cpp = new Macho(il2CppMemory);
                     break;
             }
@@ -207,13 +205,13 @@ namespace Il2CppDumper
                 }
             }
 
-            // 검색 로직 부분 수정
             bool flag = false;
             if (!manualMode)
             {
                 Console.WriteLine("Searching...");
                 try
                 {
+                    // [!] CS1061 오류 해결: Metadata.cs에 정의되지 않은 typeDefinitionsSizesCount 대신 typeDefs.Length를 사용합니다.
                     flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
@@ -242,7 +240,7 @@ namespace Il2CppDumper
                 }
             }
 
-            if (!flag) // manualMode가 true이거나 자동 검색이 실패한 경우 진입
+            if (!flag)
             {
                 if (manualMode)
                     Console.WriteLine("Manual mode enabled.");
