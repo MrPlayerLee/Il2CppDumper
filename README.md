@@ -2,7 +2,10 @@
 
 [![Build status](https://ci.appveyor.com/api/projects/status/anhqw33vcpmp8ofa?svg=true)](https://ci.appveyor.com/project/Perfare/il2cppdumper/branch/master/artifacts)
 
-中文说明请戳[这里](README.zh-CN.md)
+XOR패킹으로 인해 수동옵션의 필요 및 Metadata, Code 의 Registration Count와 주소를 커스텀할 수 있는 Il2CppDumper 입니다.
+Metadata 의 Count를 1로 해두면 제네릭을 제외한 데이터에 대한 덤프가 가능합니다.
+Code 의 Count는 따로 추출해야합니다. CodeRegistration 부분을 역참조 하거나 Frida 코드를 활용해 추적해야만 합니다.
+(Config에 있는 108은 임의의 숫자입니다. 절대 그대로 사용하지 마십시오.)
 
 Unity il2cpp reverse engineer
 
