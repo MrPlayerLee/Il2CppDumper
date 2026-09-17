@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 
 namespace Il2CppDumper
 {
@@ -26,6 +27,7 @@ namespace Il2CppDumper
         public Dictionary<int, List<Il2CppMethodSpec>> methodDefinitionMethodSpecs = new();
         public Dictionary<Il2CppMethodSpec, ulong> methodSpecGenericMethodPointers = new();
         private bool fieldOffsetsArePointers;
+        private bool codeRegistrationWithoutUnresolvedCallPointers;
         protected long metadataUsagesCount;
         public Dictionary<string, Il2CppCodeGenModule> codeGenModules;
         public Dictionary<string, ulong[]> codeGenModuleMethodPointers;
@@ -55,12 +57,14 @@ namespace Il2CppDumper
                 var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u;
                 if (Version >= 24.2)
                 {
-                    pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
+                    codeRegistration = ResolveCodeRegistration(codeRegistration);
+                    pCodeRegistration = ReadCodeRegistration(codeRegistration);
                     if (Version == 31)
                     {
                         if (pCodeRegistration.genericMethodPointersCount > limit)
                         {
-                            codeRegistration -= PointerSize * 2;
+                            Version = 29.1;
+                            Console.WriteLine($"Change il2cpp version to: {Version}");
                         }
                         else
                         {
@@ -73,7 +77,6 @@ namespace Il2CppDumper
                         if (pCodeRegistration.genericMethodPointersCount > limit)
                         {
                             Version = 29.1;
-                            codeRegistration -= PointerSize * 2;
                             Console.WriteLine($"Change il2cpp version to: {Version}");
                         }
                     }
@@ -119,13 +122,14 @@ namespace Il2CppDumper
 
         public virtual void Init(ulong codeRegistration, ulong metadataRegistration)
         {
-            pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
+            codeRegistration = ResolveCodeRegistration(codeRegistration);
+            pCodeRegistration = ReadCodeRegistration(codeRegistration);
             var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u;
             if (Version == 27 && pCodeRegistration.invokerPointersCount > limit)
             {
                 Version = 27.1;
                 Console.WriteLine($"Change il2cpp version to: {Version}");
-                pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
+                pCodeRegistration = ReadCodeRegistration(codeRegistration);
             }
             if (Version == 27.1)
             {
@@ -149,55 +153,49 @@ namespace Il2CppDumper
             {
                 Version = 24.5;
                 Console.WriteLine($"Change il2cpp version to: {Version}");
-                pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
+                pCodeRegistration = ReadCodeRegistration(codeRegistration);
             }
             if (Version == 24.2 && pCodeRegistration.codeGenModules == 0)
             {
                 Version = 24.3;
                 Console.WriteLine($"Change il2cpp version to: {Version}");
-                pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
+                pCodeRegistration = ReadCodeRegistration(codeRegistration);
             }
 
             pMetadataRegistration = MapVATR<Il2CppMetadataRegistration>(metadataRegistration);
 
-            // [!] 안티 덤프 우회: 잘못된 주소 참조로 인한 Overflow 방지 (SafeCount 적용)
-            pCodeRegistration.genericMethodPointersCount = SafeCount(pCodeRegistration.genericMethodPointersCount);
-            pCodeRegistration.invokerPointersCount = SafeCount(pCodeRegistration.invokerPointersCount);
-            if (Version < 27) pCodeRegistration.customAttributeCount = SafeCount(pCodeRegistration.customAttributeCount);
-            if (Version >= 22)
-            {
-                pCodeRegistration.reversePInvokeWrapperCount = SafeCount(pCodeRegistration.reversePInvokeWrapperCount);
-                pCodeRegistration.unresolvedVirtualCallCount = SafeCount(pCodeRegistration.unresolvedVirtualCallCount);
-            }
-            pMetadataRegistration.genericInstsCount = SafeCount(pMetadataRegistration.genericInstsCount);
-            pMetadataRegistration.fieldOffsetsCount = SafeCount(pMetadataRegistration.fieldOffsetsCount);
-            pMetadataRegistration.typesCount = SafeCount(pMetadataRegistration.typesCount);
-            pMetadataRegistration.methodSpecsCount = SafeCount(pMetadataRegistration.methodSpecsCount);
-            pMetadataRegistration.genericMethodTableCount = SafeCount(pMetadataRegistration.genericMethodTableCount);
-            if (Version >= 24.2) pCodeRegistration.codeGenModulesCount = SafeCount(pCodeRegistration.codeGenModulesCount);
+            ValidateCount("genericMethodPointersCount", pCodeRegistration.genericMethodPointersCount, pCodeRegistration.genericMethodPointers, PointerSize);
+            ValidateCount("invokerPointersCount", pCodeRegistration.invokerPointersCount, pCodeRegistration.invokerPointers, PointerSize);
+            ValidateCount("genericInstsCount", pMetadataRegistration.genericInstsCount, pMetadataRegistration.genericInsts, PointerSize);
+            ValidateCount("typesCount", pMetadataRegistration.typesCount, pMetadataRegistration.types, PointerSize);
+            ValidateCount("methodSpecsCount", pMetadataRegistration.methodSpecsCount, pMetadataRegistration.methodSpecs, 12);
+            ValidateCount("genericMethodTableCount", pMetadataRegistration.genericMethodTableCount, pMetadataRegistration.genericMethodTable, GenericMethodTableEntrySize);
+            if (Version >= 24.2) ValidateCount("codeGenModulesCount", pCodeRegistration.codeGenModulesCount, pCodeRegistration.codeGenModules, PointerSize);
 
             // [!] Config 오버라이드 로직 적용
-            if (Program.config.CustomMetadataCount > 0)
+            if (Program.config.CustomGenericMethodTableCount > 0)
             {
-                pMetadataRegistration.genericMethodTableCount = Program.config.CustomMetadataCount;
+                pMetadataRegistration.genericMethodTableCount = Program.config.CustomGenericMethodTableCount;
                 Console.WriteLine($"[!] Metadata Count Overridden: {pMetadataRegistration.genericMethodTableCount}");
             }
-            if (!string.IsNullOrEmpty(Program.config.CustomMetadataTable))
+            if (!string.IsNullOrEmpty(Program.config.CustomGenericMethodTable))
             {
-                pMetadataRegistration.genericMethodTable = Convert.ToUInt64(Program.config.CustomMetadataTable, 16);
+                pMetadataRegistration.genericMethodTable = Convert.ToUInt64(Program.config.CustomGenericMethodTable, 16);
                 Console.WriteLine($"[!] Metadata Table Overridden: 0x{pMetadataRegistration.genericMethodTable:X}");
             }
 
-            if (Program.config.CustomCodeCount > 0)
+            if (Program.config.CustomCodeGenModulesCount > 0)
             {
-                pCodeRegistration.codeGenModulesCount = (ulong)Program.config.CustomCodeCount;
+                pCodeRegistration.codeGenModulesCount = (ulong)Program.config.CustomCodeGenModulesCount;
                 Console.WriteLine($"[!] Code Count Overridden: {pCodeRegistration.codeGenModulesCount}");
             }
-            if (!string.IsNullOrEmpty(Program.config.CustomCodeTable))
+            if (!string.IsNullOrEmpty(Program.config.CustomCodeGenModules))
             {
-                pCodeRegistration.codeGenModules = Convert.ToUInt64(Program.config.CustomCodeTable, 16);
+                pCodeRegistration.codeGenModules = Convert.ToUInt64(Program.config.CustomCodeGenModules, 16);
                 Console.WriteLine($"[!] Code Table Overridden: 0x{pCodeRegistration.codeGenModules:X}");
             }
+            ValidateCount("genericMethodTableCount", pMetadataRegistration.genericMethodTableCount, pMetadataRegistration.genericMethodTable, GenericMethodTableEntrySize);
+            if (Version >= 24.2) ValidateCount("codeGenModulesCount", pCodeRegistration.codeGenModulesCount, pCodeRegistration.codeGenModules, PointerSize);
 
             genericMethodPointers = MapVATR<ulong>(pCodeRegistration.genericMethodPointers, pCodeRegistration.genericMethodPointersCount);
             invokerPointers = MapVATR<ulong>(pCodeRegistration.invokerPointers, pCodeRegistration.invokerPointersCount);
@@ -205,6 +203,7 @@ namespace Il2CppDumper
             {
                 customAttributeGenerators = MapVATR<ulong>(pCodeRegistration.customAttributeGenerators, pCodeRegistration.customAttributeCount);
             }
+
             if (Version > 16 && Version < 27)
             {
                 metadataUsages = MapVATR<ulong>(pMetadataRegistration.metadataUsages, metadataUsagesCount);
@@ -393,15 +392,111 @@ namespace Il2CppDumper
             return pointer;
         }
 
-        // [!] 쓰레기 값 필터링을 위한 안전 도우미 함수 (1600만 이상은 쓰레기 데이터로 간주)
-        private ulong SafeCount(ulong count)
+        private Il2CppCodeRegistration ReadCodeRegistration(ulong address)
         {
-            return count > 0x1000000 ? 0 : count;
+            if (!codeRegistrationWithoutUnresolvedCallPointers)
+            {
+                return MapVATR<Il2CppCodeRegistration>(address);
+            }
+
+            var compact = MapVATR<Il2CppCodeRegistrationWithoutUnresolvedCallPointers>(address);
+            var registration = new Il2CppCodeRegistration();
+            foreach (var sourceField in typeof(Il2CppCodeRegistrationWithoutUnresolvedCallPointers).GetFields())
+            {
+                var targetField = typeof(Il2CppCodeRegistration).GetField(sourceField.Name);
+                targetField?.SetValue(registration, sourceField.GetValue(compact));
+            }
+            return registration;
         }
 
-        private long SafeCount(long count)
+        private ulong GenericMethodTableEntrySize => Version == 24.5 || Version >= 27.1 ? 16u : 12u;
+
+        private ulong ResolveCodeRegistration(ulong address)
         {
-            return count < 0 || count > 0x1000000 ? 0 : count;
+            if (Version < 29.1)
+            {
+                codeRegistrationWithoutUnresolvedCallPointers = false;
+                return address;
+            }
+
+            var candidates = new[]
+            {
+                (Address: address, Compact: false),
+                (Address: address, Compact: true),
+                (Address: address >= PointerSize * 2 ? address - PointerSize * 2 : 0, Compact: false),
+                (Address: address >= PointerSize * 2 ? address - PointerSize * 2 : 0, Compact: true)
+            };
+            foreach (var candidate in candidates)
+            {
+                if (candidate.Address != 0 && IsValidCodeRegistration(candidate.Address, candidate.Compact))
+                {
+                    codeRegistrationWithoutUnresolvedCallPointers = candidate.Compact;
+                    if (candidate.Address != address)
+                    {
+                        Console.WriteLine("CodeRegistration uses an alternate layout; adjusted its start from the structure boundary.");
+                    }
+                    return candidate.Address;
+                }
+            }
+
+            throw new InvalidDataException("Unable to identify a valid CodeRegistration layout.");
+        }
+
+        private bool IsValidCodeRegistration(ulong address, bool compact)
+        {
+            try
+            {
+                Il2CppCodeRegistration registration;
+                if (compact)
+                {
+                    var source = MapVATR<Il2CppCodeRegistrationWithoutUnresolvedCallPointers>(address);
+                    registration = new Il2CppCodeRegistration();
+                    foreach (var sourceField in typeof(Il2CppCodeRegistrationWithoutUnresolvedCallPointers).GetFields())
+                    {
+                        var targetField = typeof(Il2CppCodeRegistration).GetField(sourceField.Name);
+                        targetField?.SetValue(registration, sourceField.GetValue(source));
+                    }
+                }
+                else
+                {
+                    registration = MapVATR<Il2CppCodeRegistration>(address);
+                }
+                return IsValidArray(registration.codeGenModules, registration.codeGenModulesCount, PointerSize);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsValidArray(ulong pointer, ulong count, ulong elementSize)
+        {
+            if (count == 0)
+            {
+                return pointer == 0 || (pointer != 0 && MapVATR(pointer) <= Length);
+            }
+            if (pointer == 0 || elementSize == 0)
+            {
+                return false;
+            }
+            var mapped = MapVATR(pointer);
+            return mapped <= Length && count <= (Length - mapped) / elementSize;
+        }
+
+        private void ValidateCount(string name, ulong count, ulong pointer, ulong elementSize)
+        {
+            if (!IsValidArray(pointer, count, elementSize))
+            {
+                throw new InvalidDataException($"Invalid {name}: count {count} does not fit the mapped registration array.");
+            }
+        }
+
+        private void ValidateCount(string name, long count, ulong pointer, ulong elementSize)
+        {
+            if (count < 0 || !IsValidArray(pointer, (ulong)count, elementSize))
+            {
+                throw new InvalidDataException($"Invalid {name}: count {count} does not fit the mapped registration array.");
+            }
         }
     }
 }

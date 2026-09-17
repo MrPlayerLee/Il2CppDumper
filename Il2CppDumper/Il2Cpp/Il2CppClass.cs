@@ -65,6 +65,68 @@ namespace Il2CppDumper
         public ulong codeGenModules;
     }
 
+    // Some 29.x/31.x players do not emit the two unresolved-call pointer
+    // fields.  This is the same registration up to that point, followed by
+    // the fields that are still present in the binary.
+    public class Il2CppCodeRegistrationWithoutUnresolvedCallPointers
+    {
+        [Version(Max = 24.1)]
+        public ulong methodPointersCount;
+        [Version(Max = 24.1)]
+        public ulong methodPointers;
+        [Version(Max = 21)]
+        public ulong delegateWrappersFromNativeToManagedCount;
+        [Version(Max = 21)]
+        public ulong delegateWrappersFromNativeToManaged;
+        [Version(Min = 22)]
+        public ulong reversePInvokeWrapperCount;
+        [Version(Min = 22)]
+        public ulong reversePInvokeWrappers;
+        [Version(Max = 22)]
+        public ulong delegateWrappersFromManagedToNativeCount;
+        [Version(Max = 22)]
+        public ulong delegateWrappersFromManagedToNative;
+        [Version(Max = 22)]
+        public ulong marshalingFunctionsCount;
+        [Version(Max = 22)]
+        public ulong marshalingFunctions;
+        [Version(Min = 21, Max = 22)]
+        public ulong ccwMarshalingFunctionsCount;
+        [Version(Min = 21, Max = 22)]
+        public ulong ccwMarshalingFunctions;
+        public ulong genericMethodPointersCount;
+        public ulong genericMethodPointers;
+        [Version(Min = 24.5, Max = 24.5)]
+        [Version(Min = 27.1)]
+        public ulong genericAdjustorThunks;
+        public ulong invokerPointersCount;
+        public ulong invokerPointers;
+        [Version(Max = 24.5)]
+        public ulong customAttributeCount;
+        [Version(Max = 24.5)]
+        public ulong customAttributeGenerators;
+        [Version(Min = 21, Max = 22)]
+        public ulong guidCount;
+        [Version(Min = 21, Max = 22)]
+        public ulong guids;
+        [Version(Min = 22)]
+        public ulong unresolvedVirtualCallCount;
+        [Version(Min = 22)]
+        public ulong unresolvedVirtualCallPointers;
+        [Version(Min = 23)]
+        public ulong interopDataCount;
+        [Version(Min = 23)]
+        public ulong interopData;
+        [Version(Min = 24.3)]
+        public ulong windowsRuntimeFactoryCount;
+        [Version(Min = 24.3)]
+        public ulong windowsRuntimeFactoryTable;
+        [Version(Min = 24.2)]
+        public ulong codeGenModulesCount;
+        [Version(Min = 24.2)]
+        public ulong codeGenModules;
+    }
+
     public class Il2CppMetadataRegistration
     {
         public long genericClassesCount;

@@ -14,8 +14,8 @@
   "ForceVersion": 16,
   "ForceDump": false,
   "NoRedirectedPointer": false,
-  "CustomMetadataCount": 1,
-  "CustomMetadataTable": "",
-  "CustomCodeCount": 108,
-  "CustomCodeTable": ""
+  "CustomGenericMethodTableCount": 0,
+  "CustomGenericMethodTable": "",
+  "CustomCodeGenModulesCount": 0,
+  "CustomCodeGenModules": ""
 }
